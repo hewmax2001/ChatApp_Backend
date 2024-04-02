@@ -8,7 +8,7 @@ const mongoose = require('mongoose')
     Should username be unique? (Needs something to make login token unique)
 */
 const userSchema = new mongoose.Schema({
-    usename: {
+    username: {
         type: String,
         required: true,
         unique: true
