@@ -17,6 +17,13 @@ const create = async (request, response) => {
     return response.status(201).json({savedComment})
 }
 
+const getAll = async (request, response) => {
+    const comments = await Comment.find({})
+
+    return response.status(201).json(comments)
+}
+
 module.exports = {
-    create
+    create,
+    getAll
 }
