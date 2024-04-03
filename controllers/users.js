@@ -78,5 +78,4 @@ module.exports = {
     create,
     getAll,
     get,
-    addFriend
 }
