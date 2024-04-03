@@ -1,5 +1,7 @@
 const app = require('./app')
-const port = 3000
+const config = require('./utils/config')
+
+const port = config.PORT
 
 app.listen(port, () => {
     console.log(`Chat application listening on port ${port}`)
