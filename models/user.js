@@ -21,7 +21,8 @@ const userSchema = new mongoose.Schema({
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User'
         }
-    ]
+    ],
+    refreshToken: [String]
 }, {timestamps: true})
 
 userSchema.set('toJSON', {
@@ -30,6 +31,7 @@ userSchema.set('toJSON', {
         delete returnedObject._id
         delete returnedObject.__v
         delete returnedObject.passwordHash
+        delete returnedObject.refreshToken
     }
 })
 
