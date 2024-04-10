@@ -2,6 +2,7 @@ const express = require('express')
 const morgan = require('morgan')
 const cors = require('cors')
 const mongoose = require('mongoose')
+const cookieParser = require('cookie-parser')
 
 const config = require('./utils/config')
 
@@ -9,7 +10,7 @@ const config = require('./utils/config')
 require('express-async-errors')
 
 // Routers
-const loginRouter = require('./routes/authenticationRouter')
+const authRouter = require('./routes/authRouter')
 const userRouter = require('./routes/userRouter')
 const commentRouter = require('./routes/commentRouter')
 
@@ -34,6 +35,7 @@ mongoose.connect(config.MONGODB_URI)
 // Prefix middleware
 app.use(cors())
 app.use(express.json())
+app.use(cookieParser())
 // Write this to some log file
 app.use(morgan(':method :url :status :res[conent-length] - :response-time ms'))
 
@@ -42,7 +44,7 @@ app.get('/', (req, res) => {
 })
 
 // Routes
-app.use('/api/auth', loginRouter)
+app.use('/api/auth', authRouter)
 app.use('/api/users', userRouter)
 app.use('/api/comment', commentRouter)
 
