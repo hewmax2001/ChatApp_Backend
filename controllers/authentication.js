@@ -61,7 +61,6 @@ const login =  async (request, res) => {
     await user.save()
 
     res.cookie('jwt', refToken, { httpOnly: true, secure: true, sameSite: 'None', maxAge: 60 * 60 * 24 * 1000})
-    console.log(user)
     res.status(200).json({ accessToken, username })
     
 }
@@ -77,32 +76,24 @@ const handleRefreshToken = async (request, res) => {
     if (!cookies?.jwt) return res.sendStatus(401)
     const refToken = cookies.jwt
     res.clearCookie('jwt', { httpOnly: true, sameSite: 'None', secure: true })
-    console.log("HERE")
     const decodedToken = jwt.verify(
         refToken,
         process.env.REFRESH_TOKEN_SECRET,
     )
     const foundUser = await User.findOne({ refreshToken: refToken })
-    console.log(foundUser)
     // Potentially compromised refToken
     // OR
     // Invalid token
     if (!foundUser) {
-        console.log(" and HERE")
         // Would raise JWT verfication error if invalid
-        
-        console.log("HERE aswell")
-        console.log(decodedToken)
         const compromisedUser = await User.findOne({ username: decodedToken.username })
-        console.log(compromisedUser)
         compromisedUser.refreshToken = []
         await compromisedUser.save()
-        console.log("Finally")
         return res.sendStatus(403)
     }
 
     const newRefTokenArray = foundUser.refreshToken.filter(rt => rt !== refToken)
-    console.log("HERE too")
+
     jwt.verify(
         refToken,
         process.env.REFRESH_TOKEN_SECRET,
