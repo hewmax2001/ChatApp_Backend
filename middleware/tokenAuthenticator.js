@@ -11,9 +11,9 @@ const tokenExtractor = (request) => {
 }
 
 const userAuth = (request, response, next) => {
-    const token = tokenExtractor(request)
+    const accessToken = tokenExtractor(request)
     try {
-        const decodedToken = jwt.verify(token, process.env.TOKEN_SECRET)
+        const decodedToken = jwt.verify(accessToken, process.env.TOKEN_SECRET)
 
         request.user = {
             id: decodedToken.id,
