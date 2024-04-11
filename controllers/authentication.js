@@ -1,19 +1,19 @@
 const User = require('../models/user')
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
+const detectRefreshTokenReUse = require('../services/reUseDetection')
+const getRefreshToken = require('../services/getRefreshToken')
+const createAuthTokens = require('../services/createAuthTokens')
 require('dotenv').config()
 
 // Route serving login form
-const login =  async (request, res) => {
-    const cookies = request.cookies
-    const { username, password } = request.body
-    // Raises ... error OR returns null
-    const user = await User.findOne({ username }).exec()
-
-    // Raises ... error
+// Rename to handleLogin
+const login =  async (req, res) => {
+    const { username, password } = req.body
+    const user = await User.findOne({ username }).exec() // Returns null if invalid
     const passwordCorrect = user === null
         ? false
-        : await bcrypt.compare(password, user.passwordHash)
+        : await bcrypt.compare(password, user.passwordHash) // Returns null if invalid
     
     if (!(user && passwordCorrect)) {
         // Unauthorized
@@ -22,115 +22,77 @@ const login =  async (request, res) => {
         })
     }
 
-    const userForToken = {
-        username: user.username,
-        id: user._id
-    }
-
-    const accessToken = jwt.sign(
-        userForToken,
-        process.env.TOKEN_SECRET,
-        { expiresIn: Number(process.env.TOKEN_EXPIRATION_SECONDS) }
-    )
-
-    let newRefTokenArray = !cookies?.jwt
-        ? user.refreshToken
-        : user.refreshToken.filter(rt => rt !== cookies.jwt)
+    const existingRefToken = getRefreshToken(req)
+    const newRefTokenArray = !existingRefToken
+        ? user.refreshTokens // User logged out, removing ref token from cookies
+        : detectRefreshTokenReUse(existingRefToken, user) 
+            ? [] // refToken not in user's list, clear refTokenArray
+            : user.refreshTokens.filter(rt => rt !== existingRefToken) // refToken found in list, filter it from refTokenArray
     
-    // If the refToken cookie was not cleared through logout,
-    // potential for refToken compromised
-    // Perform reuse detection
-    if (cookies?.jwt) {
-        const refToken = cookies.jwt
-        const foundToken = await User.findOne({ refToken }).exec()
 
-        if (!foundToken) {
-            newRefTokenArray = []
-        }
-
-        res.clearCookie('jwt', { httpOnly: true, sameSite: 'None', secure: true })
-    }
-
-    const refToken = jwt.sign(
-        { username: user.username },
-        process.env.REFRESH_TOKEN_SECRET,
-        { expiresIn: Number(process.env.REFRESH_TOKEN_EXPIRATION_SECONDS) }
-    )
-
-    user.refreshToken = [...newRefTokenArray, refToken]
+    const { accessToken, refToken } = createAuthTokens(user)
+    
+    // Appending newRefToken to user's list
+    user.refreshTokens = [...newRefTokenArray, refToken]
     await user.save()
-
+    
+    // Clear cookies of isntance of refresh token (will execute even if 'jwt' does not exist)
+    res.clearCookie('jwt', { httpOnly: true, sameSite: 'None', secure: true })
+    // Adding refToken to cookies
     res.cookie('jwt', refToken, { httpOnly: true, secure: true, sameSite: 'None', maxAge: 60 * 60 * 24 * 1000})
     res.status(200).json({ accessToken, username })
-    
 }
 
-/*
-Errors to handle:
-- Expired token
-- JWT verification failure (Not a valid token)
-- 
-*/
-const handleRefreshToken = async (request, res) => {
-    const cookies = request.cookies
-    if (!cookies?.jwt) return res.sendStatus(401)
-    const refToken = cookies.jwt
+const handleRefreshToken = async (req, res) => {
+    const existingRefToken = getRefreshToken(req)
+    if (!existingRefToken) return res.sendStatus(401)
+
     res.clearCookie('jwt', { httpOnly: true, sameSite: 'None', secure: true })
-    const decodedToken = jwt.verify(
-        refToken,
-        process.env.REFRESH_TOKEN_SECRET,
-    )
-    const foundUser = await User.findOne({ refreshToken: refToken })
-    // Potentially compromised refToken
-    // OR
-    // Invalid token
-    if (!foundUser) {
-        // Would raise JWT verfication error if invalid
-        const compromisedUser = await User.findOne({ username: decodedToken.username })
-        compromisedUser.refreshToken = []
-        await compromisedUser.save()
-        return res.sendStatus(403)
-    }
 
-    const newRefTokenArray = foundUser.refreshToken.filter(rt => rt !== refToken)
-
-    jwt.verify(
-        refToken,
+    // Errors exit route and transition to errorHandler
+    const decodedToken = await jwt.verify(
+        existingRefToken,
         process.env.REFRESH_TOKEN_SECRET,
-        async (err, decoded) => {
-            if (err) {
-                // Raise custom expired refresh token error
-                foundUser.refreshToken = [...newRefTokenArray]
-                await foundUser.save()
+        async (err, token) => {
+            // console.log('error:', err)
+            // console.log('token:', token)
+            if (!token) { // Invalid
+                // If an original refresh token is mutated (raising an invalidation error), it will persist in the database
+                throw jwt.JsonWebTokenError // 401
+                // throw err ?
             }
-            // If prior error was raised or username in token does not match up with found username
-            // The latter error would arise if we somehow produced the same token for antoher user?
-            if (err || foundUser.username !== decoded.username) return res.sendStatus(403)
-
-            // If token is both valid and not compromised
-            const accessToken = jwt.sign(
-                {
-                    username: foundUser.username,
-                    id: foundUser._id
-                },
-                process.env.TOKEN_SECRET,
-                { expiresIn: Number(process.env.TOKEN_EXPIRATION_SECONDS)}
-            )
-
-            const newRefToken = jwt.sign(
-                { username: foundUser.username },
-                process.env.REFRESH_TOKEN_SECRET,
-                { expiresIn: Number(process.env.REFRESH_TOKEN_EXPIRATION_SECONDS) }
-            )
-
-            foundUser.refreshToken = [...newRefTokenArray, newRefToken]
-            const result = await foundUser.save()
-            // 1000 days expiry for cookie
-            res.cookie('jwt', newRefToken, { httpOnly: true, secure: true, sameSite: 'None', maxAge: 60 * 60 * 24 * 1000})
-
-            return res.json({ accessToken })
+            else if (err && token) { // Expired
+                // Filter out expired token and return
+                const user = await User.findOne({ username: token.username }).exec()
+                const filteredExpiredToken = user.refreshTokens.filter(rt => rt !== token)
+                user.refreshTokens = filteredExpiredToken
+                await user.save()
+                throw jwt.TokenExpiredError // 401
+            }
+            return token
         }
     )
+
+    const user = await User.findOne({ username: decodedToken.username })
+
+    if (detectRefreshTokenReUse(existingRefToken, user)) {
+        const compromisedUser = await User.findOne({ username: decodedToken.username })
+        compromisedUser.refreshTokens = []
+        await compromisedUser.save()
+        return res.sendStatus(401)
+    }
+
+    const newRefTokenArray = user.refreshTokens.filter(rt => rt !== existingRefToken)
+
+    // If token is both valid and not compromised
+    const { accessToken, refToken } = createAuthTokens(user)
+
+    user.refreshTokens = [...newRefTokenArray, refToken]
+    await user.save()
+    // 1000 days expiry for cookie
+    res.cookie('jwt', refToken, { httpOnly: true, secure: true, sameSite: 'None', maxAge: 60 * 60 * 24 * 1000})
+
+    return res.json({ accessToken })
 }
 
 module.exports = { login, handleRefreshToken }
