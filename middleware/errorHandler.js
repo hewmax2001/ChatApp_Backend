@@ -1,9 +1,12 @@
+// Errors that occur in async functions resolve to here
 const errorHandler = (error, request, response, next) => {
     switch (error.name) {
         case 'JsonWebTokenError':
-            return response.status(401).json({ error: 'token missing or invalid' })
+            response.status(401).json({ error: 'token missing or invalid' })
+            break
         case 'TokenExpireError':
-            return response.status(401).json({ error: 'token expired' })
+            response.status(401).json({ error: 'token expired' })
+            break
     }
 
     next(error)
