@@ -6,7 +6,7 @@ require('dotenv').config()
 
 // Route serving login form
 // Rename to handleLogin
-const login =  async (req, res) => {
+const handleLogin =  async (req, res) => {
     const { username, password } = req.body
     const user = await User.findOne({ username }).exec() // Returns null if invalid
     const passwordCorrect = user === null
@@ -74,9 +74,8 @@ const handleRefreshToken = async (req, res) => {
     const user = await User.findOne({ username: decodedToken.username })
 
     if (detectRefreshTokenReUse(existingRefToken, user)) {
-        const compromisedUser = await User.findOne({ username: decodedToken.username })
-        compromisedUser.refreshTokens = []
-        await compromisedUser.save()
+        user.refreshTokens = []
+        await user.save()
         return res.sendStatus(401)
     }
 
@@ -87,10 +86,31 @@ const handleRefreshToken = async (req, res) => {
 
     user.refreshTokens = [...newRefTokenArray, refToken]
     await user.save()
-    // 1000 days expiry for cookie
+    // 1 days expiry for cookie
     res.cookie('jwt', refToken, { httpOnly: true, secure: true, sameSite: 'None', maxAge: 60 * 60 * 24 * 1000})
 
     return res.json({ accessToken })
 }
 
-module.exports = { login, handleRefreshToken }
+const handleLogout = async (req, res) => {
+    const oldRefToken = getRefreshToken(req)
+    res.clearCookie('jwt', { httpOnly: true, sameSite: 'None', secure: true })
+    const decodedUser = await jwt.verify(oldRefToken, process.env.REFRESH_TOKEN_SECRET,
+        (err, token) => {
+            if (err && !token) {
+                return null
+            }
+            return token
+        })
+    
+    if (decodedUser) {
+        const user = await User.findOne({ username: decodedUser.username })
+        const newRefTokenArray = user.refreshTokens.filter(rf => rf === oldRefToken)
+        user.refreshTokens = newRefTokenArray
+        await user.save()
+    }
+    // Return 204 even if request token invalid
+    return res.sendStatus(204) // 204 = No response content
+}
+
+module.exports = { handleLogin, handleLogout, handleRefreshToken } 
