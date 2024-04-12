@@ -1,9 +1,7 @@
 const User = require('../models/user')
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
-const detectRefreshTokenReUse = require('../services/reUseDetection')
-const getRefreshToken = require('../services/getRefreshToken')
-const createAuthTokens = require('../services/createAuthTokens')
+const { createAuthTokens, getRefreshToken, detectRefreshTokenReUse } = require('../services/auth')
 require('dotenv').config()
 
 // Route serving login form
