@@ -38,7 +38,7 @@ const get = async (request, response) => {
 // Sources from accepted user's client
 // Need a way to prohibit arbitrary request acceptance
 // Validate with a seperate friend request from initial sent user?
-const acceptFriend = async (request, response) => {
+const acceptFriendRequest = async (request, response) => {
 
     const { sentId, acceptedId } = request.body
 
